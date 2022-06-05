@@ -48,7 +48,7 @@ def main():
             update_config(values, 'config' , 'F01_config/config.json')
             sg.popup_auto_close('Update Complete')
 
-        elif event == 'Exit' or event == sg.WIN_CLOSED : return
+        elif event in ('Exit' , sg.WIN_CLOSED) : return
 
         elif event == 'Stop':
             recording = False
