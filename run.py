@@ -37,7 +37,8 @@ def main():
         
         if event == 'Update' :
             window['Stop'].click()
-            update_yolov5_pipe()
+            update_repository()
+            sg.popup('Update Program Complete, Please Re-Open the Program')
             window['Exit'].click()
 
         elif event == 'UpdateAdConfig' : 

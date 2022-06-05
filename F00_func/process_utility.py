@@ -10,7 +10,7 @@ from glob import glob
 from git import Repo
 
 @timeout(30)
-def update_yolov5_pipe() :
+def update_repository() :
     repo = Repo()
     repo.remotes.origin.pull()
 
