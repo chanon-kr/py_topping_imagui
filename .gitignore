@@ -1,0 +1,6 @@
+*.avi
+*.mp4
+model/*
+config/advance_config.json
+config/config.json
+*.ipynb
