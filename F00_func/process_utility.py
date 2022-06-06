@@ -23,7 +23,7 @@ class utility_processing :
     def __init__(self, config, advance_config, additional_config) :
         self.config, self.advance_config, self.additional_config = config, advance_config, additional_config
         self.fps_list, self.fps = [], 0
-        self.info_list, self.frame_no,self.action = [], 0, 0
+        self.info_list, self.frame_no,self.action, self.found = [], 0, 0, 0
         if self.config["type"] == "objectdetection" : self.info_list = pd.DataFrame()
         # Crop Area
         y1, y2 = config['video']['y1'], 1 - config['video']['y2']
@@ -44,10 +44,12 @@ class utility_processing :
         # Save Video
         masterpath, self.video_write = os.getcwd(), {}
         self.video_init_time = datetime.now()
-        video_init_time = self.video_init_time.strftime('%Y_%m_%d_%H_%M')
+        video_init_time, video_init_date = self.video_init_time.strftime('%Y_%m_%d_%H_%M'), self.video_init_time.strftime('%Y_%m_%d')
         for i in ['raw','out'] :
             if self.config['local_data'][f'save_video_{i}'] :
                 directory = os.path.join(masterpath,'F03_clip',i)
+                if not os.path.isdir(directory) : os.mkdir(directory)
+                directory = os.path.join(directory,video_init_date)
                 if not os.path.isdir(directory) : os.mkdir(directory)
                 save_path = os.path.join(directory,f'{video_init_time}.avi')
                 self.video_write[i] = cv2.VideoWriter(save_path
@@ -79,33 +81,43 @@ class utility_processing :
         self.frame_no += 1
         return out_img          
 
+    def household(self) :
+        time_pass = (datetime.now() - self.video_init_time).total_seconds()/60
+        if time_pass >= self.config['slot_minute'] :
+            self.release()
+            # Upload
+            # Move File
+            # Delete Old File
+            self.init_video()
+
     def check_action(self, processed, last_img) :
         if self.config["type"] == "objectdetection" : 
             df_ = processed['info']
             df_['frame_no'] = self.frame_no
-            if self.info_list.shape[0] > 0 : self.info_list = self.info_list[self.info_list['frame_no'] >= self.frame_no - self.config['action']['decision_frame']]
-            self.info_list = pd.concat([self.info_list,df_], axis = 0,ignore_index=True)
-            if self.config["aim"]['active'] :
-                self.action = sum(self.info_list['target_lock']) >= self.config['action']['alert_frame'] 
-                if self.action :
-                    if self.config['action']['send_line']  : 
-                        cv2.imwrite('send_noti.jpg' , last_img)
-                        line = lazy_LINE(self.config['action']['line_token'])
-                        line.send(f"\n---\n{self.config['job_name']}\n---\n{df_['name'].iloc[0]} in Position", picture = 'send_noti.jpg')     
-                        # Flush DF
-                        self.info_list = pd.DataFrame()
-            else :
-                for i in list(df_['name'].unique()) :
-                    frame_found = ((self.info_list['name'] == i) & (self.info_list['confidence'] >= self.config['action']['alert_conf'])).sum()
-                    if frame_found >= self.config['action']['alert_frame'] :
-                        # Save Image
+            if self.info_list.shape[0] > 0 : 
+                self.found += 1
+                self.info_list = self.info_list[self.info_list['frame_no'] >= self.frame_no - self.config['action']['decision_frame']]
+                self.info_list = pd.concat([self.info_list,df_], axis = 0,ignore_index=True)
+                if self.config["aim"]['active'] :
+                    self.action = sum(self.info_list['target_lock']) >= self.config['action']['alert_frame'] 
+                    if self.action :
                         if self.config['action']['send_line']  : 
                             cv2.imwrite('send_noti.jpg' , last_img)
                             line = lazy_LINE(self.config['action']['line_token'])
-                            line.send(f"\n---\n{self.config['job_name']}\n---\nFound {i}", picture = 'send_noti.jpg')     
-                        # Flush DF
-                        self.info_list = self.info_list[self.info_list['name'] != i]
-
+                            line.send(f"\n---\n{self.config['job_name']}\n---\n{df_['name'].iloc[0]} in Position", picture = 'send_noti.jpg')     
+                            # Flush DF
+                            self.info_list = pd.DataFrame()
+                else :
+                    for i in list(df_['name'].unique()) :
+                        frame_found = ((self.info_list['name'] == i) & (self.info_list['confidence'] >= self.config['action']['alert_conf'])).sum()
+                        if frame_found >= self.config['action']['alert_frame'] :
+                            # Save Image
+                            if self.config['action']['send_line']  : 
+                                cv2.imwrite('send_noti.jpg' , last_img)
+                                line = lazy_LINE(self.config['action']['line_token'])
+                                line.send(f"\n---\n{self.config['job_name']}\n---\nFound {i}", picture = 'send_noti.jpg')     
+                            # Flush DF
+                            self.info_list = self.info_list[self.info_list['name'] != i]
         elif self.config["type"] == "anomaly" : 
             if self.action : self.info_list = []
             self.info_list.append(processed['info'])
@@ -117,15 +129,6 @@ class utility_processing :
                     cv2.imwrite('send_noti.jpg' , last_img)
                     line = lazy_LINE(self.config['action']['line_token'])
                     line.send(f"\n---\n{self.config['job_name']}\n---\nFound anomaly", picture = 'send_noti.jpg')    
-
-    def household(self) :
-        time_pass = (datetime.now() - self.video_init_time).total_seconds()/60
-        if time_pass >= self.config['slot_minute'] :
-            self.release()
-            # Upload
-            # Move File
-            # Delete Old File
-            self.init_video()
 
     def resize_output(self, raw_img, mode) :
         out_img = raw_img.copy()
@@ -219,7 +222,7 @@ def record_result(df_in, temp_table_in , local_record_config_in ) :
                       , host_name = local_record_config_in['host_name']
                       , database_name = '', user = '', password = '' 
                       , mute = True)
-    sqlite.sub_dump(df_out , temp_table_in,'append')
+    sqlite.main_dump(df_out , temp_table_in,'append')
 
 
 def upload_result(temp_table_in , now_in, db_table_in, local_record_config_in, db_record_config_in, ignore_error_in = False) :
@@ -239,7 +242,7 @@ def upload_result(temp_table_in , now_in, db_table_in, local_record_config_in, d
     df_sql = sqlite.read("""SELECT * {}""".format(condition_statement), raw = True )
     print('Start Upload Database')
     try :
-        des_sql.sub_dump(df_sql , db_table_in,'append')
+        des_sql.main_dump(df_sql , db_table_in,'append')
         sqlite.engine.execute("""DELETE {}""".format(condition_statement))
     except Exception as e: 
         if not ignore_error_in : raise Exception(e)
