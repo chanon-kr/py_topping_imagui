@@ -75,28 +75,48 @@ class utility_processing :
         self.save_video(out_img, 'out')
         out_img = self.resize_output(out_img, 'show')
         self.check_action(processed, out_img)
-        if self.action : print('YUP')
+        # if self.action : self.take_action(processed, out_img)
         self.frame_no += 1
-        return out_img
+        return out_img          
 
     def check_action(self, processed, last_img) :
         if self.config["type"] == "objectdetection" : 
-            if self.action : self.info_list = pd.DataFrame()
             df_ = processed['info']
             df_['frame_no'] = self.frame_no
-            if self.info_list.shape[0] > 0 : self.info_list = self.info_list[self.info_list['frame_no'] >= self.frame_no - self.config['action']['decision_frame'] ]
+            if self.info_list.shape[0] > 0 : self.info_list = self.info_list[self.info_list['frame_no'] >= self.frame_no - self.config['action']['decision_frame']]
             self.info_list = pd.concat([self.info_list,df_], axis = 0,ignore_index=True)
             if self.config["aim"]['active'] :
                 self.action = sum(self.info_list['target_lock']) >= self.config['action']['alert_frame'] 
+                if self.action :
+                    if self.config['action']['send_line']  : 
+                        cv2.imwrite('send_noti.jpg' , last_img)
+                        line = lazy_LINE(self.config['action']['line_token'])
+                        line.send(f"\n---\n{self.config['job_name']}\n---\n{df_['name'].iloc[0]} in Position", picture = 'send_noti.jpg')     
+                        # Flush DF
+                        self.info_list = pd.DataFrame()
             else :
-                group_detect = self.info_list.groupby(['name'])[['confidence']].sum()
-                self.action = sum(group_detect['confidence'] >= self.config['action']['alert_conf'])
+                for i in list(df_['name'].unique()) :
+                    frame_found = ((self.info_list['name'] == i) & (self.info_list['confidence'] >= self.config['action']['alert_conf'])).sum()
+                    if frame_found >= self.config['action']['alert_frame'] :
+                        # Save Image
+                        if self.config['action']['send_line']  : 
+                            cv2.imwrite('send_noti.jpg' , last_img)
+                            line = lazy_LINE(self.config['action']['line_token'])
+                            line.send(f"\n---\n{self.config['job_name']}\n---\nFound {i}", picture = 'send_noti.jpg')     
+                        # Flush DF
+                        self.info_list = self.info_list[self.info_list['name'] != i]
+
         elif self.config["type"] == "anomaly" : 
             if self.action : self.info_list = []
             self.info_list.append(processed['info'])
             self.info_list = self.info_list[-self.config['action']['decision_frame']:]
             alerted_frame = sum(x > self.config['action']['alert_conf'] for x in self.info_list) 
             self.action = alerted_frame >= self.config['action']['alert_frame']
+            if self.action :
+                if self.config['action']['send_line']  : 
+                    cv2.imwrite('send_noti.jpg' , last_img)
+                    line = lazy_LINE(self.config['action']['line_token'])
+                    line.send(f"\n---\n{self.config['job_name']}\n---\nFound anomaly", picture = 'send_noti.jpg')    
 
     def household(self) :
         time_pass = (datetime.now() - self.video_init_time).total_seconds()/60

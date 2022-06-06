@@ -11,7 +11,7 @@ def format_config(raw_config) :
     for i in ["line_token"] :
         raw_config['action'][i] = str(raw_config['action'][i])
     # Action INT
-    for i in ["alert_frame", "decision_frame"] :
+    for i in ["send_line","alert_frame", "decision_frame"] :
         raw_config['action'][i] = int(raw_config['action'][i])
     # Action FLOAT
     for i in ["alert_conf"] :
