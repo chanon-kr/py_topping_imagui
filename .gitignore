@@ -7,3 +7,4 @@ F01_config/config.json
 *.xlsx
 *.ipynb
 *.pyc
+*.db
