@@ -22,6 +22,7 @@ def create_model_object(basic_config, advance_config) :
 class utility_processing :
     def __init__(self, config, advance_config, additional_config) :
         self.config, self.advance_config, self.additional_config = config, advance_config, additional_config
+        self.start_time, self.upload_time = datetime.now(), datetime.now()
         self.fps_list, self.fps = [], 0
         self.info_list, self.frame_no,self.action, self.found = [], 0, 0, 0
         if self.config["type"] == "objectdetection" : self.info_list = pd.DataFrame()
@@ -94,12 +95,12 @@ class utility_processing :
         return out_img          
 
     def household(self) :
+        """I'll return to fix this"""
         time_pass = (datetime.now() - self.video_init_time).total_seconds()/60
         if time_pass >= self.config['slot_minute'] :
             self.release()
             # DETECT SAVE Forever
             if self.found & self.config['local_data']['detected_saveforever'] :
-                print('FOUND')
                 for i in ['raw','out'] :
                     folder_detected_saveforever = self.video_save_folder[i].replace('F03_clip',self.folder_detected_saveforever)
                     if not os.path.isdir(folder_detected_saveforever) : os.mkdir(folder_detected_saveforever)
@@ -107,10 +108,14 @@ class utility_processing :
                               , self.video_save_path[i].replace('F03_clip'
                                                                 ,self.folder_detected_saveforever))
                 self.found = 0
-            # Upload
-            # Move Uploaded File
-            # Delete Old File
-            self.delete_expire_file()
+            upload_time_pass = (datetime.now() - self.upload_time).total_seconds()/60
+            if upload_time_pass >= self.config['upload_minute'] : 
+                # Upload
+                self.upload_df_result(now_in = datetime.now())
+                # Move Uploaded File
+                # Delete Old File
+                self.delete_expire_file()
+                self.upload_time = datetime.now()
             self.init_video()
 
     def delete_expire_file(self) :
@@ -121,13 +126,49 @@ class utility_processing :
             for j in glob(os.path.join(i,'*')) : os.remove(j)
             os.rmdir(i)
 
+    def record_result(self, df) :
+        """I'll return to fix this"""
+        df_out = df.copy()
+        sqlite = lazy_SQL(sql_type = self.advance_config['local_record_config']['type'] 
+                        , host_name = self.advance_config['local_record_config']['host_name']
+                        , database_name = '', user = '', password = '' 
+                        , mute = True)
+        sqlite.dump_main(df_out , self.config['local_data']['temp_table'],'append')
+
+    def upload_df_result(self, now_in, ignore_error_in = True) :
+        """I'll return to fix this"""
+        sqlite = lazy_SQL(sql_type = self.advance_config['local_record_config']['type'] 
+                        , host_name = self.advance_config['local_record_config']['host_name']
+                        , database_name = '', user = '', password = '' 
+                        , mute = True)
+        des_sql = lazy_SQL(sql_type = self.advance_config['db_record_config']['type'] 
+                        , host_name = self.advance_config['db_record_config']['host_name']
+                        , database_name = self.advance_config['db_record_config']['db_name'] 
+                        , user = self.advance_config['db_record_config']['user']
+                        , password = self.advance_config['db_record_config']['password']
+                        , mute = True )
+        date_query = [(now_in + timedelta(hours = i)).strftime('%Y-%m-%d %H') for i in [-3,-2,-1,0,1]]
+        date_query = str(tuple(date_query))
+        condition_statement = """FROM {} WHERE SUBSTR(slot_time ,1, 13) IN {}""".format(self.config['local_data']['temp_table'], date_query)
+        df_sql = sqlite.read("""SELECT * {}""".format(condition_statement), raw = True )
+        print('Start Upload Database')
+        try :
+            des_sql.dump_main(df_sql , self.config['upload']['db_table'],'append')
+            sqlite.engine.execute("""DELETE {}""".format(condition_statement))
+        except Exception as e: 
+            if not ignore_error_in : raise Exception(e)
+            print(e)
 
     def check_action(self, processed, last_img) :
+        """I'll return to fix this"""
         if self.config["type"] == "objectdetection" : 
             df_ = processed['info']
-            df_['frame_no'] = self.frame_no
             if df_.shape[0] > 0 : 
                 self.found += 1
+                df_['t_stamp'], df_['fps'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S'), self.fps
+                df_['frame_no'], df_['start_time'] = self.frame_no, self.start_time
+                df_['slot_time'], df_['job_name'] = self.video_init_time, self.config['job_name']
+                self.record_result(df_)
                 self.info_list = pd.concat([self.info_list,df_], axis = 0,ignore_index=True)
                 self.info_list = self.info_list[self.info_list['frame_no'] >= self.frame_no - self.config['action']['decision_frame']]
                 if self.config["aim"]['active'] :
@@ -207,6 +248,8 @@ class utility_processing :
         cv2.putText(out_img, str(round(info,2)) ,text_location, cv2.FONT_HERSHEY_SIMPLEX , 1,(0,0,255),2,cv2.LINE_AA)
         return out_img
 
+
+
 def send_heartbeat(process_name_in, table_name_in, heart_beat_config_in, ignore_error_in = False, job_name_in = '', message_in = '') :
     des_sql = lazy_SQL(sql_type = heart_beat_config_in['type'] 
                        , host_name = heart_beat_config_in['host_name']
@@ -223,23 +266,7 @@ def send_heartbeat(process_name_in, table_name_in, heart_beat_config_in, ignore_
         if not ignore_error_in : raise Exception(e)
         print(e)
 
-def modify_df(df_in, now_in, fps_in, frame_no_in, start_time_in, slot_time_in, job_name_in, area_detect_in) :
-    df_out = df_in.copy()
-    x1_in, y1_in = area_detect_in[1]
-    df_out['t_stamp'], df_out['fps'] = now_in.strftime('%Y-%m-%d %H:%M:%S'), fps_in
-    df_out['frame_no'], df_out['start_time'] = frame_no_in, start_time_in
-    df_out['slot_time'], df_out['job_name'] = slot_time_in, job_name_in
-    for i_ in ['xmin','xmax'] : df_out[i_] += x1_in
-    for i_ in ['ymin','ymax'] : df_out[i_] += y1_in
-    df_out['area'] = str(area_detect_in)
-    return df_out
-def record_result(df_in, temp_table_in , local_record_config_in ) :
-    df_out = df_in.copy()
-    sqlite = lazy_SQL(sql_type = local_record_config_in['type'] 
-                      , host_name = local_record_config_in['host_name']
-                      , database_name = '', user = '', password = '' 
-                      , mute = True)
-    sqlite.main_dump(df_out , temp_table_in,'append')
+
 
     
 def modify_df(df_in, now_in, fps_in, frame_no_in, start_time_in, slot_time_in, job_name_in, area_detect_in) :
