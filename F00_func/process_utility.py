@@ -37,22 +37,34 @@ class utility_processing :
         self.resize_size['raw'] = (int(additional_config['width']*config['local_data']['raw_video_size']) , int(additional_config['height']*config['local_data']['raw_video_size']))
         self.resize_size['out'] = (int(additional_config['width']*config['local_data']['out_video_size']) , int(additional_config['height']*config['local_data']['out_video_size']))
         self.resize_size['show'] = (int(additional_config['width']*config['video']['show_size']) , int(additional_config['height']*config['video']['show_size']))
+        # Ensure Folder
+        if not os.path.isdir('F03_clip') : os.mkdir('F03_clip')
+        if self.config['local_data']['detected_saveforever'] :
+            self.folder_detected_saveforever = os.path.join('F03_clip','detected')
+            if not os.path.isdir(self.folder_detected_saveforever) : os.mkdir(self.folder_detected_saveforever)
         # Create Video
         self.init_video()
 
     def init_video(self) :    
         # Save Video
-        masterpath, self.video_write = os.getcwd(), {}
+        masterpath, self.video_write, self.video_save_path = os.getcwd(), {}, {}
+        self.video_save_folder = {}
         self.video_init_time = datetime.now()
         video_init_time, video_init_date = self.video_init_time.strftime('%Y_%m_%d_%H_%M'), self.video_init_time.strftime('%Y_%m_%d')
         for i in ['raw','out'] :
             if self.config['local_data'][f'save_video_{i}'] :
+                # Ensure_folder
                 directory = os.path.join(masterpath,'F03_clip',i)
                 if not os.path.isdir(directory) : os.mkdir(directory)
+                if self.config['local_data']['detected_saveforever'] :
+                    folder_detected_saveforever = directory.replace('F03_clip',self.folder_detected_saveforever)
+                    if not os.path.isdir(folder_detected_saveforever) : os.mkdir(folder_detected_saveforever)
                 directory = os.path.join(directory,video_init_date)
                 if not os.path.isdir(directory) : os.mkdir(directory)
-                save_path = os.path.join(directory,f'{video_init_time}.avi')
-                self.video_write[i] = cv2.VideoWriter(save_path
+                self.video_save_folder[i] = directory
+                # Create Path and Create Video Writer
+                self.video_save_path[i] = os.path.join(directory,f'{video_init_time}.avi')
+                self.video_write[i] = cv2.VideoWriter(self.video_save_path[i]
                                                     , cv2.VideoWriter_fourcc(*'DIVX')  
                                                     , self.config['local_data'][f'{i}_video_fps']  
                                                     , self.resize_size[i]) 
@@ -85,19 +97,39 @@ class utility_processing :
         time_pass = (datetime.now() - self.video_init_time).total_seconds()/60
         if time_pass >= self.config['slot_minute'] :
             self.release()
+            # DETECT SAVE Forever
+            if self.found & self.config['local_data']['detected_saveforever'] :
+                print('FOUND')
+                for i in ['raw','out'] :
+                    folder_detected_saveforever = self.video_save_folder[i].replace('F03_clip',self.folder_detected_saveforever)
+                    if not os.path.isdir(folder_detected_saveforever) : os.mkdir(folder_detected_saveforever)
+                    shutil.copy(self.video_save_path[i] 
+                              , self.video_save_path[i].replace('F03_clip'
+                                                                ,self.folder_detected_saveforever))
+                self.found = 0
             # Upload
-            # Move File
+            # Move Uploaded File
             # Delete Old File
+            self.delete_expire_file()
             self.init_video()
+
+    def delete_expire_file(self) :
+        min_save_date = datetime.now() + timedelta(days = -self.config['local_data']['video_expire_after'])
+        all_folder = [x for x in glob('F03_clip/*/*') if 'detected' not in x]
+        all_folder = [x for x in all_folder if datetime.strptime(os.path.split(x)[-1],'%Y_%m_%d') < min_save_date]
+        for i in all_folder :
+            for j in glob(os.path.join(i,'*')) : os.remove(j)
+            os.rmdir(i)
+
 
     def check_action(self, processed, last_img) :
         if self.config["type"] == "objectdetection" : 
             df_ = processed['info']
             df_['frame_no'] = self.frame_no
-            if self.info_list.shape[0] > 0 : 
+            if df_.shape[0] > 0 : 
                 self.found += 1
-                self.info_list = self.info_list[self.info_list['frame_no'] >= self.frame_no - self.config['action']['decision_frame']]
                 self.info_list = pd.concat([self.info_list,df_], axis = 0,ignore_index=True)
+                self.info_list = self.info_list[self.info_list['frame_no'] >= self.frame_no - self.config['action']['decision_frame']]
                 if self.config["aim"]['active'] :
                     self.action = sum(self.info_list['target_lock']) >= self.config['action']['alert_frame'] 
                     if self.action :
@@ -125,6 +157,7 @@ class utility_processing :
             alerted_frame = sum(x > self.config['action']['alert_conf'] for x in self.info_list) 
             self.action = alerted_frame >= self.config['action']['alert_frame']
             if self.action :
+                self.found += 1
                 if self.config['action']['send_line']  : 
                     cv2.imwrite('send_noti.jpg' , last_img)
                     line = lazy_LINE(self.config['action']['line_token'])
@@ -190,6 +223,25 @@ def send_heartbeat(process_name_in, table_name_in, heart_beat_config_in, ignore_
         if not ignore_error_in : raise Exception(e)
         print(e)
 
+def modify_df(df_in, now_in, fps_in, frame_no_in, start_time_in, slot_time_in, job_name_in, area_detect_in) :
+    df_out = df_in.copy()
+    x1_in, y1_in = area_detect_in[1]
+    df_out['t_stamp'], df_out['fps'] = now_in.strftime('%Y-%m-%d %H:%M:%S'), fps_in
+    df_out['frame_no'], df_out['start_time'] = frame_no_in, start_time_in
+    df_out['slot_time'], df_out['job_name'] = slot_time_in, job_name_in
+    for i_ in ['xmin','xmax'] : df_out[i_] += x1_in
+    for i_ in ['ymin','ymax'] : df_out[i_] += y1_in
+    df_out['area'] = str(area_detect_in)
+    return df_out
+def record_result(df_in, temp_table_in , local_record_config_in ) :
+    df_out = df_in.copy()
+    sqlite = lazy_SQL(sql_type = local_record_config_in['type'] 
+                      , host_name = local_record_config_in['host_name']
+                      , database_name = '', user = '', password = '' 
+                      , mute = True)
+    sqlite.main_dump(df_out , temp_table_in,'append')
+
+    
 def modify_df(df_in, now_in, fps_in, frame_no_in, start_time_in, slot_time_in, job_name_in, area_detect_in) :
     df_out = df_in.copy()
     x1_in, y1_in = area_detect_in[1]
