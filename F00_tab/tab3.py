@@ -15,9 +15,10 @@ def tab3_gen(input_advance_config) :
                     for _key3, _item3 in _item2.items() :
                         advance_column.append([sg.Text(f'       -{_key3.capitalize()}'), sg.InputText(_item3, key=f'advance||{_key1}||{_key2}||{_key3}')])
 
-    tab3_layout = [[sg.Text('Will Be Setting na')]
-                  ,[sg.Button('UpdateConfig' , key = 'UpdateAdConfig', size=(13, 1), font='Helvetica 14'),
-                    sg.Button('ReloadConfig' , key= 'ReloadAdConfig', size=(13, 1), font='Any 14')]
+    tab3_layout = [[sg.Text('Advance Setting of py-topping-imagui')]
+                  ,[sg.Button('SaveConfig' , key = 'UpdateAdConfig', size=(13, 1), font='Helvetica 14'),
+                    # sg.Button('ReloadConfig' , key= 'ReloadAdConfig', size=(13, 1), font='Any 14')
+                    ]
                   ,[sg.Column(advance_column, scrollable=True,  vertical_scroll_only=True)]]
 
     # return tab3_layout
