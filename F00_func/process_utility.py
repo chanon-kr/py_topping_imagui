@@ -163,12 +163,12 @@ class utility_processing :
         """I'll return to fix this"""
         if self.config["type"] == "objectdetection" : 
             df_ = processed['info']
+            df_['t_stamp'], df_['fps'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S'), self.fps
+            df_['frame_no'], df_['start_time'] = self.frame_no, self.start_time
+            df_['slot_time'], df_['job_name'] = self.video_init_time, self.config['job_name']
+            self.record_result(df_)
             if df_.shape[0] > 0 : 
                 self.found += 1
-                df_['t_stamp'], df_['fps'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S'), self.fps
-                df_['frame_no'], df_['start_time'] = self.frame_no, self.start_time
-                df_['slot_time'], df_['job_name'] = self.video_init_time, self.config['job_name']
-                self.record_result(df_)
                 self.info_list = pd.concat([self.info_list,df_], axis = 0,ignore_index=True)
                 self.info_list = self.info_list[self.info_list['frame_no'] >= self.frame_no - self.config['action']['decision_frame']]
                 if self.config["aim"]['active'] :
