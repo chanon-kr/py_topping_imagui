@@ -65,6 +65,7 @@ def main():
             sg.Print('Create Model')
             model = create_model_object(basic_config, advance_config)
             sg.PrintClose()
+            window.Maximize()
 
         if recording:
             current_tstamp = datetime.now()
