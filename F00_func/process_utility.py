@@ -8,6 +8,7 @@ from py_topping.data_connection.database import lazy_SQL
 from py_topping.data_connection.gcp import lazy_GCS
 from glob import glob
 from git import Repo
+import requests, threading
 
 @timeout(30)
 def update_repository() :
@@ -159,6 +160,21 @@ class utility_processing :
             if not ignore_error_in : raise Exception(e)
             print(e)
 
+    def base_send_api(self) :
+        try :
+            if self.config['action']['api_method'].lower() == 'get' :
+                r = requests.get(self.config['action']['api_url'])
+                if r.status_code == 200 : print('send ok')
+                else : print('send error')
+            elif self.config['action']['api_method'].lower() == 'post' :
+                r = requests.post(self.config['action']['api_url'])
+                if r.status_code == 200 : print('send ok')
+                else : print('send error')
+        except Exception as e : print(f'Send API Error {e}')
+
+    def send_api(self) :
+        threading.Thread(target=self.base_send_api).start()
+
     def check_action(self, processed, last_img) :
         """I'll return to fix this"""
         if self.config["type"] == "objectdetection" : 
@@ -180,6 +196,8 @@ class utility_processing :
                             line.send(f"\n---\n{self.config['job_name']}\n---\n{df_['name'].iloc[0]} in Position", picture = 'send_noti.jpg')     
                             # Flush DF
                             self.info_list = pd.DataFrame()
+                        if self.config['action']['send_api'] :
+                            self.send_api()
                 else :
                     for i in list(df_['name'].unique()) :
                         frame_found = ((self.info_list['name'] == i) & (self.info_list['confidence'] >= self.config['action']['alert_conf'])).sum()
