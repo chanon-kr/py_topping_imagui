@@ -12,7 +12,7 @@ def format_config(raw_config) :
         raw_config['action'][i] = str(raw_config['action'][i])
     # Action INT
     for i in ["send_line","alert_frame", "decision_frame", "send_api"] :
-        raw_config['action'][i] = int(raw_config['action'][i])
+        raw_config['action'][i] = int(raw_config['action'].get(i,0))
     # Action FLOAT
     for i in ["alert_conf"] :
         raw_config['action'][i] = float(raw_config['action'][i])
