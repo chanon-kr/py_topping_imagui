@@ -73,6 +73,8 @@ def main():
             ret, frame = cap.getFrame()
             if not ret : 
                 print('Camera Error')
+                cap = Camera(basic_config['video']['video_source'])
+                print('Reconnect to camera')
                 continue
             # Cal FPS
             previous_tstamp = utility_model.cal_fps(current_tstamp, previous_tstamp, show = False)
